@@ -7,9 +7,10 @@ import com.johnsnowlabs.nlp.serialization._
 import com.johnsnowlabs.nlp._
 import com.johnsnowlabs.nlp.annotators.spell.context.parser.SpecialClassParser
 import com.johnsnowlabs.nlp.pretrained.ResourceDownloader
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.ml.param.{BooleanParam, FloatParam, IntParam}
 import org.apache.spark.ml.util.Identifiable
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{Dataset, SparkSession}
 import org.slf4j.LoggerFactory
 
 
@@ -82,22 +83,20 @@ class ContextSpellCheckerModel(override val uid: String) extends AnnotatorModel[
     this
   }
 
-  private var _model: TensorflowSpell = null
+  private var _model: Option[Broadcast[TensorflowSpell]] = None
 
-  def model: TensorflowSpell = {
-    if (_model == null) {
-      require(tensorflow != null, "Tensorflow must be set before usage. Use method setTensorflow() for it.")
+  def getModelIfNotSet: TensorflowSpell = _model.get.value
 
-      _model = new TensorflowSpell(
-        tensorflow,
-        Verbose.Silent)
+  def setModelIfNotSet(spark: SparkSession, tensorflow: TensorflowWrapper): this.type = {
+    if (_model.isEmpty) {
+      _model = Some(
+        spark.sparkContext.broadcast(
+          new TensorflowSpell(
+            tensorflow,
+            Verbose.Silent)
+        )
+      )
     }
-    _model
-  }
-
-
-  def setTensorflow(tf: TensorflowWrapper): ContextSpellCheckerModel = {
-    tensorflow = tf
     this
   }
 
@@ -131,7 +130,7 @@ class ContextSpellCheckerModel(override val uid: String) extends AnnotatorModel[
 
       val cids = expPaths.map(_.map{id => $$(classes).get(id).get._1})
       val cwids = expPaths.map(_.map{id => $$(classes).get(id).get._2})
-      val expPathsCosts = model.predict(expPaths, cids, cwids).toArray
+      val expPathsCosts = getModelIfNotSet.predict(expPaths, cids, cwids).toArray
 
       for {((state, wcost, cand), idx) <- encTrellis(i).zipWithIndex} {
         var minCost = Double.MaxValue
@@ -197,6 +196,11 @@ class ContextSpellCheckerModel(override val uid: String) extends AnnotatorModel[
     else
       trans.transduce(token, maxDist).
         toList.map(c => (c.term, c.term, c.distance.toFloat))
+  }
+
+  override def beforeAnnotate(dataset: Dataset[_]): Dataset[_] = {
+    require(_model.isDefined, "Tensorflow model has not been initialized")
+    dataset
   }
 
   /**
@@ -275,7 +279,7 @@ class ContextSpellCheckerModel(override val uid: String) extends AnnotatorModel[
 
   override def onWrite(path: String, spark: SparkSession): Unit = {
     super.onWrite(path, spark)
-    writeTensorflowModel(path, spark, tensorflow, "_langmodeldl", ContextSpellCheckerModel.tfFile)
+    writeTensorflowModel(path, spark, getModelIfNotSet.tensorflow, "_langmodeldl", ContextSpellCheckerModel.tfFile)
   }
 }
 
@@ -286,7 +290,7 @@ trait ReadsLanguageModelGraph extends ParamsAndFeaturesReadable[ContextSpellChec
 
   def readLanguageModelGraph(instance: ContextSpellCheckerModel, path: String, spark: SparkSession): Unit = {
     val tf = readTensorflowModel(path, spark, "_langmodeldl")
-    instance.setTensorflow(tf)
+    instance.setModelIfNotSet(spark, tf)
   }
 
   addReader(readLanguageModelGraph)

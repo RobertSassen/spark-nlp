@@ -1,10 +1,12 @@
 package com.johnsnowlabs.ml.tensorflow
 
+import com.johnsnowlabs.nlp.embeddings.ClusterWordEmbeddings
+
 class NerDatasetEncoder
 (
-  val embeddingsResolver: Function[String, Array[Float]],
+  val embeddingsResolver: ClusterWordEmbeddings,
   val params: DatasetEncoderParams
-) {
+) extends Serializable {
 
   private val nonDefaultTags = params.tags
     .filter(_ != params.defaultTag)
@@ -53,7 +55,7 @@ class NerDatasetEncoder
       val sentence = sentences(i)
       Range(0, maxSentenceLength).map{j =>
         val word = getOrElse(sentence, j, "")
-        embeddingsResolver(word)
+        embeddingsResolver.getLocalRetriever.getEmbeddingsVector(word)
       }.toArray
     }.toArray
 

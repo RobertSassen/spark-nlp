@@ -72,15 +72,15 @@ object NerDLModelPythonReader {
     val labels = readTags(folder)
     val chars = readChars(folder)
     val settings = DatasetEncoderParams(labels, chars)
-    val encoder = new NerDatasetEncoder(embeddings.getLocalRetriever.getEmbeddingsVector, settings)
+    val encoder = new NerDatasetEncoder(embeddings, settings)
     val tf = TensorflowWrapper.read(folder, zipped=false, useBundle, tags)
 
     FileHelper.delete(tmpFolder)
 
     new NerDLModel()
-      .setTensorflow(tf)
       .setDatasetParams(encoder.params)
       .setEmbeddingsDim(embeddingsDim)
       .setCaseSensitiveEmbeddings(normalize)
+      .setModelIfNotSet(spark, tf)
   }
 }

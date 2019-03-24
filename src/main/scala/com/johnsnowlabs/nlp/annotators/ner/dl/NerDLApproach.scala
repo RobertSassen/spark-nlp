@@ -161,7 +161,7 @@ class NerDLApproach(override val uid: String)
 
     val settings = DatasetEncoderParams(labels.toList, chars.toList)
     val encoder = new NerDatasetEncoder(
-      getClusterEmbeddings.getLocalRetriever.getEmbeddingsVector,
+      getClusterEmbeddings,
       settings
     )
 
@@ -198,10 +198,12 @@ class NerDLApproach(override val uid: String)
     }
 
     new NerDLModel()
-      .setTensorflow(tf)
       .setDatasetParams(ner.encoder.params)
       .setCaseSensitiveEmbeddings($(caseSensitiveEmbeddings))
       .setBatchSize($(batchSize))
+      .setEmbeddingsDim($(embeddingsDim))
+      .setEmbeddingsRef($(embeddingsRef))
+      .setModelIfNotSet(dataset.sparkSession, tf)
   }
 }
 
